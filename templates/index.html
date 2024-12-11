@@ -1,155 +1,257 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Live Face Recognition</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #f4f4f9;
-        }
+      /* Global Styles */
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #ff1a76, #0041b0);
+        background-size: 200% 200%;
+        animation: gradientAnimation 4s infinite alternate;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+      }
 
+      @keyframes gradientAnimation {
+        0% {
+          background-position: 0% 50%;
+        }
+        50% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+
+      .container {
+        text-align: center;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
+        max-width: 90%;
+        width: 500px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 80%;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+        margin-bottom: 20px;
+      }
+
+      .video-container {
+        position: relative;
+        display: contents;
+        width: 100%;
+        max-width: 360px;
+        margin-bottom: 20px;
+      }
+
+      #video-stream {
+        display: none;
+        width: 100%;
+        height: auto;
+        border: 3px solid #fff;
+        border-radius: 10px;
+        background-color: black;
+      }
+
+      canvas {
+        display: none;
+      }
+
+      .output {
+        margin-top: 20px;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.6);
+        border-radius: 5px;
+        font-size: 1rem;
+        color: #fff;
+      }
+
+      .controls {
+        margin-top: auto;
+        display: flex;
+        justify-content: space-around;
+        width: 100%;
+      }
+
+      button {
+        font-size: 17px;
+        padding: 1em 2.7em;
+        font-weight: 500;
+        background: #ff7f7f;
+        color: rgb(255, 249, 249);
+        border: none;
+        position: relative;
+        overflow: hidden;
+        border-radius: 0.6em;
+        cursor: pointer;
+      }
+
+      .gradient {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        left: 0;
+        top: 0;
+        border-radius: 0.6em;
+        margin-top: -0.25em;
+        background-image: linear-gradient(
+          rgba(0, 0, 0, 0),
+          rgba(0, 0, 0, 0),
+          rgba(0, 0, 0, 0.3)
+        );
+      }
+
+      .label {
+        position: relative;
+        top: -1px;
+      }
+
+      .transition {
+        transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
+        transition-duration: 500ms;
+        background-color: rgba(16, 78, 185, 0.6);
+        border-radius: 9999px;
+        width: 0;
+        height: 0;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      button:hover .transition {
+        width: 14em;
+        height: 14em;
+      }
+
+      button:active {
+        transform: scale(0.97);
+      }
+
+      #status-box {
+        width: 100%;
+        height: 480px;
+        background-color: #333;
+        border-radius: 10px;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 1.5rem;
+        display: none;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 768px) {
         h1 {
-            margin-top: 20px;
-            color: #333;
-        }
-
-        .video-container {
-            position: relative;
-            display: inline-block;
-        }
-
-        img {
-            width: 640px;
-            height: 480px;
-            border: 2px solid #ccc;
-            border-radius: 10px;
-            background-color: black;
-        }
-
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-
-        .output {
-            margin-top: 20px;
-            padding: 10px;
-            background: #fff;
-            border-radius: 5px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-
-        .controls {
-            margin-top: 20px;
+          font-size: 1.5rem;
         }
 
         button {
-            padding: 10px 20px;
-            margin: 0 10px;
-            font-size: 16px;
-            color: #fff;
-            background-color: #007bff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
+          font-size: 0.9rem;
         }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
+      }
     </style>
-</head>
-<body>
-    <h1>Live Face Recognition</h1>
-    <div class="video-container">
-        <img id="video-stream" src="" alt="Video Stream">
+  </head>
+  <body>
+    <div class="container">
+      <h1>Live Face Recognition</h1>
+      <div class="video-container">
+        <img id="video-stream" src="" alt="Video Stream" />
         <canvas id="overlay" width="640" height="480"></canvas>
-    </div>
-    <div class="output">
-        <p id="recognition-output">Face Recognition Output: None</p>
-    </div>
-    <div class="controls">
-        <button id="start-button">Start</button>
-        <button id="stop-button" disabled>Stop</button>
+      </div>
+
+      <div class="output">
+        <p id="recognition-output">Press start to detect faces.</p>
+      </div>
+
+      <div class="controls">
+        <button id="start-button">
+          <span class="transition"></span>
+          <span class="gradient"></span>
+          <span class="label">Start</span>
+        </button>
+        <button id="stop-button" disabled>
+          <span class="transition"></span>
+          <span class="gradient"></span>
+          <span class="label">Stop</span>
+        </button>
+      </div>
     </div>
 
     <script>
-        const videoStream = document.getElementById('video-stream');
-        const canvas = document.getElementById('overlay');
-        const ctx = canvas.getContext('2d');
-        const recognitionOutput = document.getElementById('recognition-output');
-        const startButton = document.getElementById('start-button');
-        const stopButton = document.getElementById('stop-button');
+      const videoStream = document.getElementById("video-stream");
+      const canvas = document.getElementById("overlay");
+      const ctx = canvas.getContext("2d");
+      const recognitionOutput = document.getElementById("recognition-output");
+      const startButton = document.getElementById("start-button");
+      const stopButton = document.getElementById("stop-button");
+      const statusBox = document.getElementById("status-box");
 
-        let recognitionInterval = null;
+      let recognitionInterval = null;
 
-        async function fetchRecognitionData() {
-            try {
-                const response = await fetch('/get_faces');
-                const data = await response.json();
+      async function fetchRecognitionData() {
+        try {
+          const response = await fetch("/get_faces");
+          const data = await response.json();
 
-                // Clear the canvas
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+          // Clear the canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                // Draw bounding boxes
-                // data.faces.forEach(face => {
-                //     ctx.strokeStyle = 'lime';
-                //     ctx.lineWidth = 2;
-                //     ctx.strokeRect(face.x, face.y, face.width, face.height);
-
-                //     // Display recognition name
-                //     ctx.fillStyle = 'lime';
-                //     ctx.font = '16px Arial';
-                //     ctx.fillText(face.name, face.x, face.y - 5);
-                // });
-
-                // Update recognition output
-                if (data.faces.length > 0) {
-                    recognitionOutput.textContent = `Face Recognition Output: ${data.faces.map(f => f.name).join(', ')}`;
-                } else {
-                    recognitionOutput.textContent = 'Face Recognition Output: None';
-                }
-            } catch (error) {
-                console.error('Error fetching recognition data:', error);
-            }
+          // Update recognition output
+          if (data.faces.length > 0) {
+            recognitionOutput.textContent = `Face Recognition Output: ${data.faces
+              .map((f) => f.name)
+              .join(", ")}`;
+          } else {
+            recognitionOutput.textContent = "Face Recognition Output: None";
+          }
+        } catch (error) {
+          console.error("Error fetching recognition data:", error);
         }
+      }
 
-        function startRecognition() {
-            videoStream.src = '/video_feed';
-            videoStream.alt = 'Loading video...';
-            recognitionInterval = setInterval(fetchRecognitionData, 500);
-            startButton.disabled = true;
-            stopButton.disabled = false;
-        }
+      function startRecognition() {
+        fetchRecognitionData();
+        videoStream.src = "/video_feed";
+        videoStream.alt = "Loading video...";
+        videoStream.style.display = "block";
+        recognitionInterval = setInterval(fetchRecognitionData, 5000);
+        startButton.disabled = true;
+        stopButton.disabled = false;
+      }
 
-        function stopRecognition() {
-            videoStream.src = '';
-            videoStream.alt = 'Video Stream Stopped';
-            clearInterval(recognitionInterval);
-            recognitionInterval = null;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            recognitionOutput.textContent = 'Face Recognition Output: None';
-            startButton.disabled = false;
-            stopButton.disabled = true;
-        }
+      function stopRecognition() {
+        videoStream.src = "";
+        videoStream.alt = "Video Stream Stopped";
+        videoStream.style.display = "none";
+        clearInterval(recognitionInterval);
+        recognitionInterval = null;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        recognitionOutput.textContent = "Press start to detect faces.";
+        startButton.disabled = false;
+        stopButton.disabled = true;
+      }
 
-        startButton.addEventListener('click', startRecognition);
-        stopButton.addEventListener('click', stopRecognition);
+      startButton.addEventListener("click", startRecognition);
+      stopButton.addEventListener("click", stopRecognition);
     </script>
-</body>
+  </body>
 </html>
