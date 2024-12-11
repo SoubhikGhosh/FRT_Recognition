@@ -1,36 +1,84 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, render_template, Response, jsonify
 import cv2
 import os
-from models import mtcnn, facenet, build_face_database, recognize_faces_video
+from utils import recognize_faces, build_face_database
+import numpy as np
 
 app = Flask(__name__)
 
+# Initialize camera
+camera = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
+
 # Load the face database
-DATABASE_FOLDER = "known_faces"
-database = build_face_database(DATABASE_FOLDER, mtcnn, facenet)
+IMAGE_FOLDER = "known_faces"  # Path to the folder containing images of known faces
+database = build_face_database(IMAGE_FOLDER)
 
-@app.route('/process_video', methods=['POST'])
-def process_video():
-    try:
-        # Check if a video file was uploaded
-        video_file = request.files.get('video')
-        if not video_file:
-            return jsonify({"error": "No video file provided"}), 400
-        
-        # Save uploaded video
-        input_video_path = os.path.join("static", "input.mp4")
-        output_video_path = os.path.join("static", "output.mp4")
-        video_file.save(input_video_path)
-        
-        # Process the video
-        recognize_faces_video(input_video_path, database, mtcnn, facenet, output_video_path)
-        
-        # Return the processed video
-        return send_file(output_video_path, as_attachment=True)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+def convert_to_float(value):
+    """ Convert NumPy float32 to Python native float """
+    if isinstance(value, np.float32):
+        return float(value)
+    elif isinstance(value, dict):
+        return {k: convert_to_float(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [convert_to_float(v) for v in value]
+    return value
 
-if __name__ == '__main__':
-    if not os.path.exists("static"):
-        os.makedirs("static")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+def generate_frames():
+    """ Generate video frames for streaming """
+    while True:
+        success, frame = camera.read()
+        if not success:
+            break
+
+        # Detect and recognize faces in the frame
+        annotated_frame, results = recognize_faces(frame, database)
+
+        # Encode the frame to JPEG format
+        _, buffer = cv2.imencode('.jpg', annotated_frame)
+        if not _:
+            print("Error encoding frame")
+            continue
+
+        # Yield the frame for video streaming
+        frame = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+@app.route('/video_feed')
+def video_feed():
+    """ Route to stream video to the HTML page """
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/get_faces')
+def get_faces():
+    """ Route to fetch face recognition data as JSON """
+    success, frame = camera.read()
+    if not success:
+        return jsonify({"faces": []})
+
+    # Recognize faces in the current frame
+    _, results = recognize_faces(frame, database)
+
+    # Prepare face data for the response
+    face_data = [
+        {
+            "name": name,
+            "confidence": convert_to_float(score)  # Convert NumPy float32 to Python float
+        }
+        for (name, score) in results
+    ]
+
+    return jsonify({"faces": face_data})
+
+@app.route('/')
+def index():
+    """ Route to render the HTML page """
+    return render_template('index.html')
+
+if __name__ == "__main__":
+    # Ensure the face database exists
+    if not os.path.exists(IMAGE_FOLDER):
+        print(f"Error: Face database folder '{IMAGE_FOLDER}' does not exist.")
+        exit(1)
+
+    app.run(host="0.0.0.0", port=5002, debug=True)
