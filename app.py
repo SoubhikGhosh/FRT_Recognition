@@ -1,8 +1,9 @@
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, request, render_template, Response, jsonify
 import cv2
 import os
 from utils import recognize_faces, build_face_database
 import numpy as np
+import base64
 
 app = Flask(__name__)
 
@@ -28,6 +29,7 @@ def generate_frames():
     while True:
         success, frame = camera.read()
         if not success:
+            print("unsuccessful camera read")
             break
 
         # Detect and recognize faces in the frame
@@ -57,7 +59,8 @@ def get_faces():
     Route to fetch face recognition data as JSON 
     """
     success, frame = camera.read()
-    if not success:
+    if not success or frame is None or frame.size == 0:
+        # Handle case where frame is empty or invalid
         return jsonify({"faces": []})
 
     # Recognize faces in the current frame
@@ -73,6 +76,44 @@ def get_faces():
     ]
 
     return jsonify({"faces": face_data})
+
+@app.route('/recognize_face', methods=['POST'])
+def recognize_base64():
+    """
+    Endpoint to perform face recognition on a base64-encoded image.
+    Accepts JSON with the key "image" containing the base64 string.
+    Returns face recognition results as JSON.
+    """
+    try:
+        # Parse the JSON request
+        data = request.get_json()
+        if 'image' not in data:
+            return jsonify({"error": "No image data provided"}), 400
+
+        # Decode the base64 image
+        image_data = base64.b64decode(data['image'])
+        np_array = np.frombuffer(image_data, dtype=np.uint8)
+        frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+        if frame is None:
+            return jsonify({"error": "Invalid image data"}), 400
+
+        # Perform face recognition
+        _, results = recognize_faces(frame, database)
+
+        # Prepare the response data
+        face_data = [
+            {
+                "name": name,
+                "confidence": convert_to_float(score)  # Convert NumPy float32 to Python float
+            }
+            for (name, score) in results
+        ]
+
+        return jsonify({"faces": face_data})
+
+    except Exception as e:
+        print(f"Error processing the base64 image: {e}")
+        return jsonify({"error": "An error occurred during processing"}), 500
 
 @app.route('/')
 def index():
