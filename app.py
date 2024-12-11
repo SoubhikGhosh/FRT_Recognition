@@ -46,12 +46,16 @@ def generate_frames():
 
 @app.route('/video_feed')
 def video_feed():
-    """ Route to stream video to the HTML page """
+    """ 
+    Route to stream video to the HTML page 
+    """
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/get_faces')
 def get_faces():
-    """ Route to fetch face recognition data as JSON """
+    """ 
+    Route to fetch face recognition data as JSON 
+    """
     success, frame = camera.read()
     if not success:
         return jsonify({"faces": []})
