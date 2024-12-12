@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1
-import faiss
+# import faiss
 import os
 # import nmslib
 
@@ -31,66 +31,119 @@ def encode_faces(faces, facenet):
         embeddings.append(embedding)
     return np.vstack(embeddings)
 
+
 def build_face_database(image_folder):
     database = {}
     for file in os.listdir(image_folder):
         name, ext = os.path.splitext(file)
-        if ext.lower() not in ['.jpg', '.png']:
+        if ext.lower() not in ['.jpg', '.png', '.jpeg']:
             continue
         image = cv2.imread(os.path.join(image_folder, file))
         faces = extract_face(image, mtcnn)[1]
         if faces:
             embeddings = encode_faces(faces, facenet)
             database[name] = embeddings[0]
+            print(name)
+
+        else:
+            print (f"face not detected for {name}" )
     return database
 
-def recognize_faces(image, database, threshold=0.6):
+def recognize_faces(image, database, threshold=0.7):
+    
+    # Step 1: Detect faces in the image
     boxes, faces = extract_face(image, mtcnn)
     if not faces:
         return image, []
 
+    # Step 2: Encode detected faces into embeddings
     embeddings = encode_faces(faces, facenet)
+    
+    # Step 3: Precompute database embeddings and normalize
     db_embeddings = np.array(list(database.values())).astype('float32')
     db_names = list(database.keys())
+    
+    # Normalize embeddings if required
+    if db_embeddings.shape[0] > 0:
+        db_embeddings = db_embeddings / np.linalg.norm(db_embeddings, axis=1, keepdims=True)
+    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
 
-    index = faiss.IndexFlatIP(db_embeddings.shape[1])
-    faiss.normalize_L2(db_embeddings)
-    index.add(db_embeddings)
-
-    faiss.normalize_L2(embeddings)
-    distances, indices = index.search(embeddings, 1)
-
-    # results = []
-    # for box, (dist, idx) in zip(boxes, zip(distances[:, 0], indices[:, 0])):
-    #     if dist > threshold and idx < len(db_names):
-    #         results.append((box, db_names[idx], dist))
-    #     else:
-    #         results.append((box, "Unknown", dist))
-
+    # Step 4: Match using NumPy (faster for small datasets)
     results = []
-    for dist, idx in zip(distances[:, 0], indices[:, 0]):
-        if dist > threshold and idx < len(db_names):
-            results.append((db_names[idx], dist))
+    for embedding in embeddings:
+        # Compute cosine similarity
+        similarities = np.dot(db_embeddings, embedding)
+        best_match_idx = np.argmax(similarities)
+        best_match_score = similarities[best_match_idx]
+        
+        if best_match_score > threshold:
+            results.append((db_names[best_match_idx], best_match_score))
         else:
-            results.append((None, dist))
-
+            results.append((None, best_match_score))
+    
+    # Step 5: Annotate the image
     annotated_image = image.copy()
-
-    # for (box, name, score) in results:
-    #     x1, y1, x2, y2 = [int(b) for b in box]
-    #     label = f"{name} ({score:.2f})"
-    #     color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-    #     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
-    #     cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-
-    for (box, (name, score)) in zip(mtcnn.detect(image)[0], results):
+    for (box, (name, score)) in zip(boxes, results):
         x1, y1, x2, y2 = [int(b) for b in box]
         label = f"{name} ({score:.2f})" if name else "Unknown"
         color = (0, 255, 0) if name else (0, 0, 255)
         cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.25, color, 1)
-        
+        cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     return annotated_image, results
+
+
+# def recognize_faces_faiss(image, database, threshold=0.6):
+#     print("starting recognize_faces()")
+#     boxes, faces = extract_face(image, mtcnn)
+#     if not faces:
+#         return image, []
+#     print ("faces detected")
+
+#     embeddings = encode_faces(faces, facenet)
+#     db_embeddings = np.array(list(database.values())).astype('float32')
+#     db_names = list(database.keys())
+#     print ("embeddings created from detected faces")
+
+#     index = faiss.IndexFlatIP(db_embeddings.shape[1])
+#     faiss.normalize_L2(db_embeddings)
+#     index.add(db_embeddings)
+#     print ("faiss.normalize_L2 index created")
+
+#     faiss.normalize_L2(embeddings)
+#     distances, indices = index.search(embeddings, 1)
+#     print ("faisssearch done")
+    
+#     # results = []
+#     # for box, (dist, idx) in zip(boxes, zip(distances[:, 0], indices[:, 0])):
+#     #     if dist > threshold and idx < len(db_names):
+#     #         results.append((box, db_names[idx], dist))
+#     #     else:
+#     #         results.append((box, "Unknown", dist))
+
+#     results = []
+#     for dist, idx in zip(distances[:, 0], indices[:, 0]):
+#         if dist > threshold and idx < len(db_names):
+#             results.append((db_names[idx], dist))
+#         else:
+#             results.append((None, dist))
+
+#     annotated_image = image.copy()
+
+#     # for (box, name, score) in results:
+#     #     x1, y1, x2, y2 = [int(b) for b in box]
+#     #     label = f"{name} ({score:.2f})"
+#     #     color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+#     #     cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
+#     #     cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+#     for (box, (name, score)) in zip(mtcnn.detect(image)[0], results):
+#         x1, y1, x2, y2 = [int(b) for b in box]
+#         label = f"{name} ({score:.2f})" if name else "Unknown"
+#         color = (0, 255, 0) if name else (0, 0, 255)
+#         cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
+#         cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.25, color, 1)
+        
+#     return annotated_image, results
 
 # def recognize_faces_nmslib(input_image, database, mtcnn, facenet, threshold):
 #     """

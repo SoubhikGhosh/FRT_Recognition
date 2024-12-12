@@ -21,63 +21,63 @@ def convert_to_float(value):
         return [convert_to_float(v) for v in value]
     return value
 
-def generate_frames():
-    """ Generate video frames for streaming """
+# def generate_frames():
+#     """ Generate video frames for streaming """
 
-    # Initialize camera
-    camera = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
-    while True:
-        success, frame = camera.read()
-        if not success:
-            print("unsuccessful camera read")
-            break
+#     # Initialize camera
+#     camera = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
+#     while True:
+#         success, frame = camera.read()
+#         if not success:
+#             print("unsuccessful camera read")
+#             break
 
-        # Detect and recognize faces in the frame
-        annotated_frame, results = recognize_faces(frame, database)
+#         # Detect and recognize faces in the frame
+#         annotated_frame, results = recognize_faces(frame, database)
 
-        # Encode the frame to JPEG format
-        _, buffer = cv2.imencode('.jpg', annotated_frame)
-        if not _:
-            print("Error encoding frame")
-            continue
+#         # Encode the frame to JPEG format
+#         _, buffer = cv2.imencode('.jpg', annotated_frame)
+#         if not _:
+#             print("Error encoding frame")
+#             continue
 
-        # Yield the frame for video streaming
-        frame = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+#         # Yield the frame for video streaming
+#         frame = buffer.tobytes()
+#         yield (b'--frame\r\n'
+#                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-@app.route('/video_feed')
-def video_feed():
-    """ 
-    Route to stream video to the HTML page 
-    """
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+# @app.route('/video_feed')
+# def video_feed():
+#     """ 
+#     Route to stream video to the HTML page 
+#     """
+#     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/get_faces')
-def get_faces():
-    """ 
-    Route to fetch face recognition data as JSON 
-    """
-    # Initialize camera
-    camera2 = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
-    success, frame = camera2.read()
-    if not success or frame is None or frame.size == 0:
-        # Handle case where frame is empty or invalid
-        return jsonify({"faces": []})
+# @app.route('/get_faces')
+# def get_faces():
+#     """ 
+#     Route to fetch face recognition data as JSON 
+#     """
+#     # Initialize camera
+#     camera2 = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
+#     success, frame = camera2.read()
+#     if not success or frame is None or frame.size == 0:
+#         # Handle case where frame is empty or invalid
+#         return jsonify({"faces": []})
 
-    # Recognize faces in the current frame
-    _, results = recognize_faces(frame, database)
+#     # Recognize faces in the current frame
+#     _, results = recognize_faces(frame, database)
 
-    # Prepare face data for the response
-    face_data = [
-        {
-            "name": name,
-            "confidence": convert_to_float(score)  # Convert NumPy float32 to Python float
-        }
-        for (name, score) in results
-    ]
+#     # Prepare face data for the response
+#     face_data = [
+#         {
+#             "name": name,
+#             "confidence": convert_to_float(score)  # Convert NumPy float32 to Python float
+#         }
+#         for (name, score) in results
+#     ]
 
-    return jsonify({"faces": face_data})
+#     return jsonify({"faces": face_data})
 
 @app.route('/recognize_face', methods=['POST'])
 def recognize_base64():
