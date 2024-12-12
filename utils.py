@@ -4,6 +4,7 @@ import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1
 import faiss
 import os
+# import nmslib
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -90,3 +91,58 @@ def recognize_faces(image, database, threshold=0.6):
         cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.25, color, 1)
         
     return annotated_image, results
+
+# def recognize_faces_nmslib(input_image, database, mtcnn, facenet, threshold):
+#     """
+#     Recognizes faces in the input image by comparing with the database using NMSLIB.
+    
+#     Parameters:
+#     - input_image: The image to process.
+#     - database: A dictionary of precomputed embeddings (name -> embedding).
+#     - mtcnn: The face detector.
+#     - facenet: The face recognition model.
+#     - threshold: Similarity threshold for recognition.
+    
+#     Returns:
+#     - Annotated image with recognition results.
+#     """
+#     # Extract and crop faces
+#     faces = extract_face(input_image, mtcnn)
+#     if not faces:
+#         return input_image, []
+
+#     # Generate embeddings for detected faces
+#     embeddings = encode_faces(faces, facenet)
+    
+#     # Prepare NMSLIB index
+#     # Convert database to a format suitable for NMSLIB
+#     db_embeddings = np.array(list(database.values())).astype('float32')
+#     db_names = list(database.keys())
+
+#     # Create NMSLIB index
+#     index = nmslib.init(method='hnsw', space='cosinesimil')
+#     for idx, embedding in enumerate(db_embeddings):
+#         index.addDataPoint(idx, embedding)
+#     index.createIndex({'post': 2}, print_progress=False)
+
+#     results = []
+#     for embedding in embeddings:
+#         # Query the nearest neighbor
+#         nearest_neighbors = index.knnQuery(embedding, k=1)
+#         idx, dist = nearest_neighbors[0][0], 1 - nearest_neighbors[1][0]  # Convert to similarity score
+#         if dist > threshold and idx < len(db_names):
+#             results.append((db_names[idx], dist))
+#         else:
+#             results.append((None, dist))
+    
+#     # Annotate image
+#     annotated_image = input_image.copy()
+#     for (box, (name, score)) in zip(mtcnn.detect(input_image)[0], results):
+#         x1, y1, x2, y2 = [int(b) for b in box]
+#         label = f"{name} ({score:.2f})" if name else "Unknown"
+#         color = (0, 255, 0) if name else (0, 0, 255)
+#         cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
+#         cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.25, color, 1)
+    
+#     return annotated_image, results
+
