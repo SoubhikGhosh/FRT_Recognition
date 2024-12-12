@@ -59,11 +59,6 @@ def recognize_base64():
         print(f"Error processing the base64 image: {e}")
         return jsonify({"error": "An error occurred during processing"}), 500
 
-@app.route('/')
-def index():
-    """ Route to render the HTML page """
-    return render_template('index.html')
-
 if __name__ == "__main__":
     # Ensure the face database exists
     if not os.path.exists(IMAGE_FOLDER):
