@@ -7,9 +7,6 @@ import base64
 
 app = Flask(__name__)
 
-# Initialize camera
-camera = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
-
 # Load the face database
 IMAGE_FOLDER = "known_faces"  # Path to the folder containing images of known faces
 database = build_face_database(IMAGE_FOLDER)
@@ -26,6 +23,9 @@ def convert_to_float(value):
 
 def generate_frames():
     """ Generate video frames for streaming """
+
+    # Initialize camera
+    camera = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
     while True:
         success, frame = camera.read()
         if not success:
@@ -58,7 +58,9 @@ def get_faces():
     """ 
     Route to fetch face recognition data as JSON 
     """
-    success, frame = camera.read()
+    # Initialize camera
+    camera2 = cv2.VideoCapture(0)  # Use 0 for webcam, or replace with your video source
+    success, frame = camera2.read()
     if not success or frame is None or frame.size == 0:
         # Handle case where frame is empty or invalid
         return jsonify({"faces": []})
@@ -91,7 +93,7 @@ def recognize_base64():
             return jsonify({"error": "No image data provided"}), 400
 
         # Decode the base64 image
-        image_data = base64.b64decode(data['image'])
+        image_data = base64.b64decode(data['image'].split(",")[1])
         np_array = np.frombuffer(image_data, dtype=np.uint8)
         frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
         if frame is None:
