@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template, Response, jsonify
+from flask_cors import CORS, cross_origin
 import cv2
 import os
 from utils import recognize_faces, build_face_database
@@ -22,6 +23,7 @@ def convert_to_float(value):
     return value
 
 @app.route('/recognize_face', methods=['POST'])
+@cross_origin(origins=['http://localhost:3000'])
 def recognize_base64():
     """
     Endpoint to perform face recognition on a base64-encoded image.
