@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, Response, jsonify
 from flask_cors import CORS, cross_origin
 import cv2
 import os
-from utils import recognize_faces, build_face_database, recognize_faces_faiss
+from utils import recognize_faces, build_face_database, recognize_faces_faiss, convert_to_float, save_and_process_image
 import numpy as np
 import base64
 import time
@@ -13,18 +13,35 @@ app = Flask(__name__)
 IMAGE_FOLDER = "known_faces"  # Path to the folder containing images of known faces
 database = build_face_database(IMAGE_FOLDER)
 
-def convert_to_float(value):
-    """ Convert NumPy float32 to Python native float """
-    if isinstance(value, np.float32):
-        return float(value)
-    elif isinstance(value, dict):
-        return {k: convert_to_float(v) for k, v in value.items()}
-    elif isinstance(value, list):
-        return [convert_to_float(v) for v in value]
-    return value
+@app.route('/capture', methods=['POST'])
+@cross_origin(origins=['http://localhost:3000'])
+def capture_image():
+    """
+    Endpoint to save an image, detect and encode faces, and update the database.
+    """
+    try:
+        # Parse the request
+        data = request.json
+        if not data or 'name' not in data or 'image' not in data:
+            return jsonify({"error": "Name and image data are required"}), 400
+        
+        name = data['name']
+        base64_image = data['image']
+
+        # Process the image and update the database
+        result = save_and_process_image(name, base64_image, IMAGE_FOLDER, database)
+
+        if "error" in result:
+            return jsonify({"error": result["error"]}), 400
+        return jsonify({"message": result["message"], "file_path": result["file_path"]}), 200
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"error": "An internal error occurred"}), 500
+
 
 @app.route('/recognize_face', methods=['POST'])
-@cross_origin(origins=['http://localhost:3000'])
+@cross_origin(origins=['*'])
 def recognize_base64():
     """
     Endpoint to perform face recognition on a base64-encoded image.

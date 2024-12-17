@@ -1,4 +1,5 @@
 import cv2
+import pickle
 import numpy as np
 import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1
@@ -6,6 +7,7 @@ import os
 import faiss
 import mediapipe as mp
 from tqdm import tqdm
+import base64
 
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 mtcnn = MTCNN(keep_all=True, device=device)
@@ -14,6 +16,82 @@ facenet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
 # Initialize MediaPipe BlazeFace
 mp_face_detection = mp.solutions.face_detection
 mp_drawing = mp.solutions.drawing_utils
+
+def get_next_filename(directory, name):
+    """
+    Generates the next filename in sequence for the given name.
+    Example: If 'name_0001.jpg' exists, it returns 'name_0002.jpg'.
+    """
+    counter = 1
+    while True:
+        file_name = f"{name}_{counter:04d}.jpg"
+        file_path = os.path.join(directory, file_name)
+        if not os.path.exists(file_path):
+            return file_path
+        counter += 1
+
+def convert_to_float(value):
+    """ Convert NumPy float32 to Python native float """
+    if isinstance(value, np.float32):
+        return float(value)
+    elif isinstance(value, dict):
+        return {k: convert_to_float(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [convert_to_float(v) for v in value]
+    return value
+
+def save_and_process_image(name, base64_image, save_dir, database):
+    """
+    Save the image to a folder, process the face, update the in-memory and .pkl database.
+    
+    Parameters:
+    - name: Name of the person (used for folder and labeling).
+    - base64_image: Base64-encoded image string.
+    - save_dir: Base directory to store images.
+    - database: In-memory face database dictionary.
+    """
+    try:
+        # Create user directory
+        user_dir = os.path.join(save_dir, name)
+        os.makedirs(user_dir, exist_ok=True)
+
+        # Generate the next file name
+        file_count = len([f for f in os.listdir(user_dir) if f.endswith(('.jpg', '.png'))])
+        file_path = get_next_filename(user_dir, name)
+
+        # Decode and save the base64 image
+        image_data = base64.b64decode(base64_image.split(",")[1])
+        with open(file_path, "wb") as f:
+            f.write(image_data)
+        print(f"Image saved at {file_path}")
+
+        # Read the saved image
+        image = cv2.imread(file_path)
+        if image is None:
+            return {"error": "Invalid image data"}
+
+        # Detect and encode faces
+        _, faces = extract_face(image)
+        if not faces:
+            return {"error": "No faces detected in the image"}
+
+        embeddings = encode_faces(faces, facenet)
+
+        # Update the database
+        if name not in database:
+            print("name not in database, creating record.")
+            database[name] = []
+        database[name].extend(embeddings)
+
+        # Save updated database to .pkl
+        save_database(database)
+        print("updated .pkl file with the new entry.")
+
+        return {"message": "Image processed and database updated successfully", "file_path": file_path}
+
+    except Exception as e:
+        print(f"Error during image processing: {e}")
+        return {"error": str(e)}
 
 def extract_face(image, target_size=(160, 160)):
     """
@@ -70,12 +148,36 @@ def encode_faces(faces, facenet):
         embeddings.append(embedding)
     return np.vstack(embeddings)
 
+DATABASE_FILE = "face_database.pkl"  # File to store face database
+
+def save_database(database, file_path=DATABASE_FILE):
+    """ Save the face database to a file. """
+    with open(file_path, 'wb') as f:
+        pickle.dump(database, f)
+    print(f"Face database saved to {file_path}")
+
+def load_database(file_path=DATABASE_FILE):
+    """ Load the face database from a file. """
+    if os.path.exists(file_path):
+        with open(file_path, 'rb') as f:
+            database = pickle.load(f)
+        print(f"Face database loaded from {file_path}")
+        return database
+    else:
+        print(f"No saved database found at {file_path}. Building a new one.")
+        return {}
+
 def build_face_database(image_folder):
     """
     Builds a face database by extracting face embeddings from all images 
     in subdirectories named after individuals, with a global progress bar.
     """
     database = {}
+
+    # Check if we already have a saved database
+    saved_database = load_database()
+    if saved_database:
+        return saved_database  # Return the existing database
     
     # Gather all image paths in a list for global progress tracking
     image_paths = []
@@ -115,9 +217,10 @@ def build_face_database(image_folder):
             pbar.update(1)
 
     print(f"Loaded faces for {len(database)} individuals.")
+    save_database(database)
     return database
 
-def recognize_faces(image, database, threshold=0.7):
+def recognize_faces(image, database, threshold=0.5):
     """
     Detect and recognize faces in an image by comparing embeddings 
     with all known embeddings in the database.
