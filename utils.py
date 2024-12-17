@@ -7,7 +7,7 @@ import faiss
 import mediapipe as mp
 from tqdm import tqdm
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 mtcnn = MTCNN(keep_all=True, device=device)
 facenet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
 
@@ -58,7 +58,8 @@ def extract_face(image, target_size=(160, 160)):
                 continue
             face_resized = cv2.resize(face, target_size)
             cropped_faces.append(face_resized)
-        
+
+        cv2.destroyAllWindows()  # If any windows were created during processing
         return boxes, cropped_faces
 
 def encode_faces(faces, facenet):
@@ -72,48 +73,48 @@ def encode_faces(faces, facenet):
 def build_face_database(image_folder):
     """
     Builds a face database by extracting face embeddings from all images 
-    in subdirectories named after individuals, with a progress bar.
+    in subdirectories named after individuals, with a global progress bar.
     """
     database = {}
     
-    # Walk through the image folder
+    # Gather all image paths in a list for global progress tracking
+    image_paths = []
     for root, dirs, files in os.walk(image_folder):
-        # Skip if no images in the directory
-        if not files:
-            continue
-        
-        # Use the last folder name as the person's name
-        person_name = os.path.basename(root)
-        embeddings_list = []
-        
-        # Use tqdm to show progress on files in the current directory
-        for file in tqdm(files, desc=f"Processing {person_name}", ncols=100, unit="file"):
+        for file in files:
             name, ext = os.path.splitext(file)
-            if ext.lower() not in ['.jpg', '.png', '.jpeg']:
-                continue
+            if ext.lower() in ['.jpg', '.png', '.jpeg']:  # Only consider image files
+                image_paths.append(os.path.join(root, file))
+    
+    # Create a tqdm progress bar for all images
+    with tqdm(total=len(image_paths), desc="Loading database", ncols=100, unit="file") as pbar:
+        # Process each image
+        for image_path in image_paths:
+            # Extract person's name from the directory (folder name)
+            person_name = os.path.basename(os.path.dirname(image_path))
             
             # Load the image
-            image_path = os.path.join(root, file)
             image = cv2.imread(image_path)
             if image is None:
                 print(f"Warning: Unable to read {image_path}")
+                pbar.update(1)
                 continue
 
             # Extract faces and encode
             boxes, faces = extract_face(image)
             if faces:
                 embeddings = encode_faces(faces, facenet)
-                embeddings_list.extend(embeddings)
+
+                # Store embeddings in the database for the person
+                if person_name not in database:
+                    database[person_name] = []
+                database[person_name].extend(embeddings)
             else:
                 print(f"Face not detected in {image_path}")
+            
+            # Update progress bar
+            pbar.update(1)
 
-        # Store all embeddings for the person in the database
-        if embeddings_list:
-            database[person_name] = embeddings_list
-            print(f"Added {len(embeddings_list)} embeddings for {person_name}")
-        else:
-            print(f"No valid faces found for {person_name}")
-    print(f"loaded faces: {len(database)}")
+    print(f"Loaded faces for {len(database)} individuals.")
     return database
 
 def recognize_faces(image, database, threshold=0.7):
@@ -121,16 +122,21 @@ def recognize_faces(image, database, threshold=0.7):
     Detect and recognize faces in an image by comparing embeddings 
     with all known embeddings in the database.
     """
+
+    print("starting to recognize faces.")
     # Step 1: Detect faces in the image
     boxes, faces = extract_face(image)
     if not faces:
+        print("no faces detected.")
         return image, []
-
+    
+    print("encoding faces.")
     # Step 2: Encode detected faces into embeddings
     embeddings = encode_faces(faces, facenet)
 
     results = []
 
+    print("matching faces.")
     # Step 3: Match query embeddings against database embeddings
     for embedding in embeddings:
         best_match_name = None
@@ -157,6 +163,7 @@ def recognize_faces(image, database, threshold=0.7):
         else:
             results.append((None, best_match_score))
 
+    print("annotating results.")
     # Step 4: Annotate the image
     annotated_image = image.copy()
     for (box, (name, score)) in zip(boxes, results):
@@ -171,14 +178,19 @@ def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=4):
     """
     Optimized face recognition using FAISS with approximate nearest neighbor search.
     """
+
+    print("starting to recognize faces using FAISS.")
     # Step 1: Extract and crop faces from the input image
     boxes, faces = extract_face(input_image)
     if not faces:
         return input_image, []
 
+    print("encoding faces.")
     # Step 2: Generate embeddings for the detected faces
     embeddings = encode_faces(faces, facenet)
 
+
+    print("matching faces.")
     # Step 3: Prepare FAISS index
     # Flatten all embeddings from the database into a single list
     all_db_embeddings = []
@@ -212,6 +224,7 @@ def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=4):
         else:
             results.append((None, dist))
 
+    print("annotating results.")
     # Step 6: Annotate the image with the recognition results
     annotated_image = input_image.copy()
     for (box, (name, score)) in zip(boxes, results):
