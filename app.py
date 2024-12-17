@@ -150,4 +150,4 @@ if __name__ == "__main__":
     if not os.path.exists(IMAGE_FOLDER):
         print(f"Error: Face database folder '{IMAGE_FOLDER}' does not exist.")
         exit(1)
-    app.run(host="172.20.10.5", port=5000, debug=False)
+    app.run(port=5000, debug=False)

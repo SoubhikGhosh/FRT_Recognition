@@ -8,6 +8,8 @@ import faiss
 import mediapipe as mp
 from tqdm import tqdm
 import base64
+from sklearn.preprocessing import normalize
+
 
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 mtcnn = MTCNN(keep_all=True, device=device)
@@ -276,48 +278,64 @@ def recognize_faces(image, database, threshold=0.7):
         cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     return annotated_image, results
 
-def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=4):
+def numpy_normalize(embeddings):
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    return embeddings / np.maximum(norms, 1e-10)  # Avoid division by zero
+
+def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=16, nprobe=4):
     """
     Optimized face recognition using FAISS with approximate nearest neighbor search.
+    Designed for MacBook Air M1 with CPU optimization.
     """
+    print("Starting to recognize faces using FAISS.")
 
-    print("starting to recognize faces using FAISS.")
     # Step 1: Extract and crop faces from the input image
-    boxes, faces = extract_face(input_image)
+    boxes, faces = extract_face(input_image)  # Replace with your face detection function
     if not faces:
         return input_image, []
 
-    print("encoding faces.")
+    print("Encoding faces.")
     # Step 2: Generate embeddings for the detected faces
-    embeddings = encode_faces(faces, facenet)
+    embeddings = encode_faces(faces, facenet)  # Replace with your face embedding model
 
-
-    print("matching faces.")
-    # Step 3: Prepare FAISS index
-    # Flatten all embeddings from the database into a single list
+    print("Preparing FAISS index with on-the-fly normalization.")
+    # Step 3: Prepare the FAISS index with non-normalized database embeddings
+    faiss.omp_set_num_threads(8)  # Adjust based on your system
     all_db_embeddings = []
-    embedding_to_name_map = []  # Keeps track of which person each embedding belongs to
+    embedding_to_name_map = []
 
+    # Flatten database and map embeddings to names
     for name, embedding_list in database.items():
         for embedding in embedding_list:
             all_db_embeddings.append(embedding)
             embedding_to_name_map.append(name)
 
-    # Convert to numpy array and normalize for cosine similarity
-    all_db_embeddings = np.array(all_db_embeddings).astype('float32')
-    faiss.normalize_L2(all_db_embeddings)
+    # Convert embeddings to a NumPy array
+    all_db_embeddings = np.array(all_db_embeddings, dtype='float32')
 
-    # Create FAISS index for approximate search
+    all_db_embeddings = numpy_normalize(all_db_embeddings)
+
+    # Create and configure FAISS index
     dimension = all_db_embeddings.shape[1]
-    index = faiss.IndexIVFFlat(faiss.IndexFlatIP(dimension), dimension, nlist)
-    index.train(all_db_embeddings)
-    index.add(all_db_embeddings)
+    index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity
+    index = faiss.IndexIVFFlat(index, dimension, nlist)  # Inverted index
+    # Use a subset of embeddings for training
+    num_training_points = max(1000, len(all_db_embeddings) // 10)  # 10% or at least 1000 points
+    training_embeddings = all_db_embeddings[np.random.choice(len(all_db_embeddings), num_training_points, replace=False)]
 
+    # Train and add embeddings
+    index.train(training_embeddings)
+    index.add(all_db_embeddings)  # Add normalized embeddings
+    index.nprobe = nprobe  # Set the number of clusters to search
+
+    print("Normalizing and searching embeddings.")
     # Step 4: Normalize input embeddings and search using FAISS
-    faiss.normalize_L2(embeddings)
-    k = 1  # Top-1 match for each detected face
+    embeddings = np.array(embeddings, dtype='float32')
+    embeddings = normalize(embeddings, axis=1, norm='l2')
+    k = 1  # Top-1 match
     distances, indices = index.search(embeddings, k)
 
+    print("Processing search results.")
     # Step 5: Process the FAISS results
     results = []
     for dist, idx in zip(distances[:, 0], indices[:, 0]):
@@ -326,7 +344,7 @@ def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=4):
         else:
             results.append((None, dist))
 
-    print("annotating results.")
+    print("Annotating the image.")
     # Step 6: Annotate the image with the recognition results
     annotated_image = input_image.copy()
     for (box, (name, score)) in zip(boxes, results):
