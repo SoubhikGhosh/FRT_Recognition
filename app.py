@@ -14,7 +14,7 @@ IMAGE_FOLDER = "known_faces"  # Path to the folder containing images of known fa
 database = build_face_database(IMAGE_FOLDER)
 
 @app.route('/capture', methods=['POST'])
-@cross_origin(origins=['http://localhost:3000'])
+@cross_origin(origins=['*'])
 def capture_image():
     """
     Endpoint to save an image, detect and encode faces, and update the database.
@@ -53,9 +53,25 @@ def recognize_base64():
         data = request.get_json()
         if 'image' not in data:
             return jsonify({"error": "No image data provided"}), 400
+        
+        
 
         # Decode the base64 image
         image_data = base64.b64decode(data['image'].split(",")[1])
+        # Get the current time as a float (seconds since epoch)
+        current_time = time.time()
+
+        # Convert to a time struct
+        time_struct = time.localtime(current_time)
+
+        # Format the time as a string (e.g., "YYYY-MM-DD HH:MM:SS")
+        time_str = time.strftime("%Y-%m-%d %H:%M:%S", time_struct)
+
+        file_path =  "recognise/"+time_str+".jpeg"
+        with open(file_path, "wb") as f:
+            f.write(image_data)
+        print(f"Image saved at {file_path}")
+
         np_array = np.frombuffer(image_data, dtype=np.uint8)
         frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
         if frame is None:
@@ -78,6 +94,7 @@ def recognize_base64():
             for (name, score) in results
         ]
 
+        print(f"face_data: {face_data}")
         return jsonify({"faces": face_data})
 
     except Exception as e:

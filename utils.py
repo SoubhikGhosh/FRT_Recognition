@@ -56,7 +56,6 @@ def save_and_process_image(name, base64_image, save_dir, database):
         os.makedirs(user_dir, exist_ok=True)
 
         # Generate the next file name
-        file_count = len([f for f in os.listdir(user_dir) if f.endswith(('.jpg', '.png'))])
         file_path = get_next_filename(user_dir, name)
 
         # Decode and save the base64 image
@@ -220,7 +219,7 @@ def build_face_database(image_folder):
     save_database(database)
     return database
 
-def recognize_faces(image, database, threshold=0.5):
+def recognize_faces(image, database, threshold=0.7):
     """
     Detect and recognize faces in an image by comparing embeddings 
     with all known embeddings in the database.
