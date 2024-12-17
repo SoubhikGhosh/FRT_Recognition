@@ -2,9 +2,10 @@ from flask import Flask, request, render_template, Response, jsonify
 from flask_cors import CORS, cross_origin
 import cv2
 import os
-from utils import recognize_faces, build_face_database
+from utils import recognize_faces, build_face_database, recognize_faces_faiss
 import numpy as np
 import base64
+import time
 
 app = Flask(__name__)
 
@@ -44,7 +45,19 @@ def recognize_base64():
             return jsonify({"error": "Invalid image data"}), 400
 
         # Perform face recognition
+        # Measure time for original recognize_faces
+        start_time_original = time.time()
         _, results = recognize_faces(frame, database)
+        time_original = time.time() - start_time_original
+
+        # Measure time for FAISS-based recognize_faces_faiss
+        start_time_faiss = time.time()
+        _, results_faiss = recognize_faces_faiss(frame, database)
+        time_faiss = time.time() - start_time_faiss
+
+        print(f"time taken for normal cosine sim: {time_original}")
+        print(f"time taken for faiss: {time_faiss}")
+
 
         # Prepare the response data
         face_data = [

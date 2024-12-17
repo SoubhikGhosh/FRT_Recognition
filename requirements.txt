@@ -1,7 +1,9 @@
 flask
+flask-cors
 opencv-python-headless
 numpy
 torch
 torchvision
 facenet-pytorch
 faiss-cpu
+tqdm
