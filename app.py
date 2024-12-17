@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, Response, jsonify
 from flask_cors import CORS, cross_origin
 import cv2
 import os
-from utils import recognize_faces, build_face_database, recognize_faces_faiss, convert_to_float, save_and_process_image
+from utils import recognize_faces, build_face_database, recognize_faces_faiss, convert_to_float, save_and_process_image, recognize_and_group_faces
 import numpy as np
 import base64
 import time
@@ -80,7 +80,7 @@ def recognize_base64():
         # Perform face recognition
         # Measure time for original recognize_faces
         start_time_original = time.time()
-        _, results = recognize_faces(frame, database)
+        _, results = recognize_and_group_faces(frame, database)
         time_original = time.time() - start_time_original
         print(f"time taken for normal cosine sim: {time_original}")
 

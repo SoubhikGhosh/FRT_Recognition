@@ -9,7 +9,9 @@ import mediapipe as mp
 from tqdm import tqdm
 import base64
 from sklearn.preprocessing import normalize
-
+import albumentations as A
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import KMeans
 
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 mtcnn = MTCNN(keep_all=True, device=device)
@@ -42,7 +44,18 @@ def convert_to_float(value):
         return [convert_to_float(v) for v in value]
     return value
 
-def save_and_process_image(name, base64_image, save_dir, database):
+# Define the augmentation pipeline
+def get_augmentation_pipeline():
+    return A.Compose([
+        A.RandomRotate90(p=0.5),
+        A.HorizontalFlip(p=0.5),
+        A.RandomBrightnessContrast(p=0.2),
+        A.ShiftScaleRotate(p=0.3),
+        A.RandomCrop(width=200, height=200, p=0.5),
+        A.GaussianBlur(blur_limit=3, p=0.2),
+    ])
+
+def save_and_process_image(name, base64_image, save_dir, database, facenet=None):
     """
     Save the image to a folder, process the face, update the in-memory and .pkl database.
     
@@ -71,8 +84,12 @@ def save_and_process_image(name, base64_image, save_dir, database):
         if image is None:
             return {"error": "Invalid image data"}
 
-        # Detect and encode faces
-        _, faces = extract_face(image)
+        # Apply augmentations in real-time before processing the face
+        augmentation_pipeline = get_augmentation_pipeline()
+        augmented_image = augmentation_pipeline(image=image)["image"]
+
+        # Detect and encode faces from the augmented image
+        _, faces = extract_face(augmented_image)
         if not faces:
             return {"error": "No faces detected in the image"}
 
@@ -92,7 +109,11 @@ def save_and_process_image(name, base64_image, save_dir, database):
                 if filename.endswith(".jpg") or filename.endswith(".png") or filename.endswith(".jpeg"):
                     image_path = os.path.join(user_dir, filename)
                     image = cv2.imread(image_path)
-                    _, faces = extract_face(image)
+                    
+                    # Apply the same augmentation to this image
+                    augmented_image = augmentation_pipeline(image=image)["image"]
+                    
+                    _, faces = extract_face(augmented_image)
                     if faces:
                         embeddings = encode_faces(faces, facenet)
                         all_embeddings.append(embeddings)
@@ -111,7 +132,6 @@ def save_and_process_image(name, base64_image, save_dir, database):
     except Exception as e:
         print(f"Error during image processing: {e}")
         return {"error": str(e)}
-
 
 def extract_face(image, target_size=(160, 160)):
     """
@@ -161,12 +181,39 @@ def extract_face(image, target_size=(160, 160)):
         return boxes, cropped_faces
 
 def encode_faces(faces, facenet):
+    """
+    Encodes the detected faces into embeddings using the FaceNet model.
+    
+    Parameters:
+    - faces: List of detected face images (numpy arrays).
+    - facenet: Pretrained FaceNet model.
+    - device: The device (cpu or cuda) to run the model on.
+    
+    Returns:
+    - embeddings: Numpy array of encoded face embeddings.
+    """
     embeddings = []
     for face in faces:
+        # Ensure the face is in the correct format (H, W, C -> C, H, W)
         face = torch.tensor(face.transpose(2, 0, 1)).float().unsqueeze(0).to(device) / 255.0
-        embedding = facenet(face).detach().cpu().numpy()
+
+        # Forward pass to get the embedding
+        with torch.no_grad():  # Disable gradient calculation
+            embedding = facenet(face)  # Get the embedding from the FaceNet model
+
+        # Convert to numpy and flatten if necessary (e.g., (1, 128) -> (128,))
+        embedding = embedding.detach().cpu().numpy().flatten()
         embeddings.append(embedding)
-    return np.vstack(embeddings)
+
+    # Stack all embeddings vertically and return
+    embeddings = np.vstack(embeddings)
+    
+    # Check consistency of shapes for debugging
+    if len(set([emb.shape[0] for emb in embeddings])) > 1:
+        print(f"Warning: Inconsistent embedding shapes: {[emb.shape[0] for emb in embeddings]}")
+        
+    return embeddings
+
 
 DATABASE_FILE = "face_database.pkl"  # File to store face database
 
@@ -398,4 +445,75 @@ def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=16, nprobe
         cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
         cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
+    return annotated_image, results
+
+
+# KMeans clustering for grouping similar faces
+def apply_kmeans_clustering(embeddings, n_clusters=3):
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    kmeans.fit(embeddings)
+    return kmeans.labels_
+
+# Scikit-learn NearestNeighbors for K-NN search
+def sklearn_nn_search(database_embeddings, query_embeddings, k=5):
+    nn = NearestNeighbors(n_neighbors=k, metric='cosine')  # Using cosine distance
+    nn.fit(database_embeddings)
+    distances, indices = nn.kneighbors(query_embeddings)
+    
+    return distances, indices
+
+# Function to recognize and group faces
+def recognize_and_group_faces(input_image, database, threshold=0.7, k=5, clustering=False):
+    # Assuming embeddings for faces are pre-computed and loaded
+    database_embeddings = np.array([db_emb for name, db_emb in database.items()])
+    database_names = list(database.keys())
+    
+    # Step 1: Extract faces from the input image
+    boxes, faces = extract_face(input_image)  # Replace with actual face extraction
+    if not faces:
+        print("No faces detected in the input image.")
+        return input_image, []
+
+    # Step 2: Generate embeddings for detected faces
+    query_embeddings = encode_faces(faces, facenet)  # Replace with your embedding extraction
+
+    # Normalize embeddings
+    query_embeddings = numpy_normalize(query_embeddings)
+    
+    # Step 3: Perform nearest neighbor search
+    distances, indices = sklearn_nn_search(database_embeddings, query_embeddings, k)
+
+    # If clustering is enabled, group the query embeddings into clusters
+    if clustering:
+        labels = apply_kmeans_clustering(query_embeddings, n_clusters=3)
+        print(f"Clustering results: {labels}")
+    
+    # Step 4: Process the search results and assign labels
+    results = []
+    for i, (dist, idx) in enumerate(zip(distances, indices)):
+        best_match_name = None
+        best_match_score = -1
+
+        for j, index in enumerate(idx):
+            if dist[j] < threshold:
+                best_match_name = database_names[index]
+                best_match_score = dist[j]
+
+        # Check if the best match score is above the threshold
+        if best_match_name:
+            print(f"Face {i+1}: Matched with {best_match_name} (Score: {best_match_score:.2f})")
+            results.append((best_match_name, best_match_score))
+        else:
+            print(f"Face {i+1}: No reliable match found.")
+            results.append((None, None))
+    
+    # Step 5: Annotate the image with the recognition results
+    annotated_image = input_image.copy()
+    for (box, (name, score)) in zip(boxes, results):
+        x1, y1, x2, y2 = [int(b) for b in box]
+        label = f"{name} ({score:.2f})" if name else "Unknown"
+        color = (0, 255, 0) if name else (0, 0, 255)
+        cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    
     return annotated_image, results
