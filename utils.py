@@ -80,19 +80,38 @@ def save_and_process_image(name, base64_image, save_dir, database):
 
         # Update the database
         if name not in database:
-            print("name not in database, creating record.")
-            database[name] = []
-        database[name].extend(embeddings)
+            print("Name not in database, creating new record.")
+            database[name] = [embeddings]  # Store as a list of embeddings
+        else:
+            print(f"Name {name} found in database, updating record.")
+            
+            # Recalculate the average embedding from all images in the folder
+            print(f"Recalculating average embeddings for {name}")
+            all_embeddings = []
+            for filename in os.listdir(user_dir):
+                if filename.endswith(".jpg") or filename.endswith(".png") or filename.endswith(".jpeg"):
+                    image_path = os.path.join(user_dir, filename)
+                    image = cv2.imread(image_path)
+                    _, faces = extract_face(image)
+                    if faces:
+                        embeddings = encode_faces(faces, facenet)
+                        all_embeddings.append(embeddings)
 
-        # Save updated database to .pkl
+            # Recalculate the average of all embeddings
+            if all_embeddings:
+                averaged_embeddings = np.mean(np.array(all_embeddings), axis=0)
+                database[name] = averaged_embeddings  # Update the database with the new average
+
+        # Save the updated database to a .pkl file
         save_database(database)
-        print("updated .pkl file with the new entry.")
+        print("Updated .pkl file with the new entry.")
 
         return {"message": "Image processed and database updated successfully", "file_path": file_path}
 
     except Exception as e:
         print(f"Error during image processing: {e}")
         return {"error": str(e)}
+
 
 def extract_face(image, target_size=(160, 160)):
     """
@@ -218,56 +237,80 @@ def build_face_database(image_folder):
             pbar.update(1)
 
     print(f"Loaded faces for {len(database)} individuals.")
+
+    database = compute_average_embeddings(database)
     save_database(database)
     return database
 
-def recognize_faces(image, database, threshold=0.7):
+def compute_average_embeddings(database):
+    return {name: np.mean(np.array(embeddings), axis=0) for name, embeddings in database.items()}
+
+def recognize_faces(image, database, threshold=0.7, confidence_margin=0.0001):
     """
     Detect and recognize faces in an image by comparing embeddings 
     with all known embeddings in the database.
     """
 
-    print("starting to recognize faces.")
+    print("Starting to recognize faces...")
+
     # Step 1: Detect faces in the image
     boxes, faces = extract_face(image)
     if not faces:
-        print("no faces detected.")
+        print("No faces detected.")
         return image, []
-    
-    print("encoding faces.")
+
+    print(f"Detected {len(faces)} face(s). Encoding faces...")
     # Step 2: Encode detected faces into embeddings
     embeddings = encode_faces(faces, facenet)
+    if len(embeddings) == 0:
+        print("No embeddings generated.")
+        return image, []
+
+    # Normalize query embeddings
+    embeddings = np.array([emb / np.linalg.norm(emb) if np.linalg.norm(emb) > 0 else emb for emb in embeddings])
 
     results = []
 
-    print("matching faces.")
+    print("Matching faces...")
     # Step 3: Match query embeddings against database embeddings
-    for embedding in embeddings:
+    for i, embedding in enumerate(embeddings):
         best_match_name = None
         best_match_score = -1  # Initialize with a low score
-        
-        for person_name, stored_embeddings in database.items():
-            stored_embeddings = np.vstack(stored_embeddings)  # Stack stored embeddings
-            
-            # Normalize embeddings
-            stored_embeddings = stored_embeddings / np.linalg.norm(stored_embeddings, axis=1, keepdims=True)
-            query_embedding = embedding / np.linalg.norm(embedding)
+        second_best_score = -1  # Track second-best score for confidence margin
 
-            # Compute cosine similarity with all stored embeddings
-            similarities = np.dot(stored_embeddings, query_embedding)
-            max_similarity = np.max(similarities)
+        for person_name, stored_embeddings in database.items():
+            # Ensure stored_embeddings is a 2D array
+            stored_embeddings = np.array(stored_embeddings)
+            if stored_embeddings.ndim == 1:
+                stored_embeddings = stored_embeddings[np.newaxis, :]  # Convert to 2D if needed
+            
+            # Normalize stored embeddings
+            stored_embeddings = stored_embeddings / np.linalg.norm(stored_embeddings, axis=1, keepdims=True)
+
+            # Flatten both stored embeddings and the query embedding to 1D
+            embedding_flat = embedding.flatten()  # Flatten query embedding to (512,)
+            stored_embeddings_flat = stored_embeddings.flatten()  # Flatten stored embeddings to (512,)
+
+            # Compute cosine similarities between stored embeddings and the query embedding
+            similarities = np.dot(stored_embeddings_flat, embedding_flat)  # Dot product between 1D vectors
+            max_similarity = similarities
 
             if max_similarity > best_match_score:
+                second_best_score = best_match_score  # Update second-best score
                 best_match_name = person_name
                 best_match_score = max_similarity
-        
-        # Compare against the threshold
-        if best_match_score >= threshold:
+            elif max_similarity > second_best_score:
+                second_best_score = max_similarity
+
+        # Confidence margin check: Ensure best match is significantly better than second-best
+        if best_match_score >= threshold and (best_match_score - second_best_score) >= confidence_margin:
+            print(f"Face {i + 1}: Matched with {best_match_name} (Score: {best_match_score:.2f})")
             results.append((best_match_name, best_match_score))
         else:
+            print(f"Face {i + 1}: No reliable match (Score: {best_match_score:.2f}, Margin: {best_match_score - second_best_score:.2f})")
             results.append((None, best_match_score))
 
-    print("annotating results.")
+    print("Annotating results...")
     # Step 4: Annotate the image
     annotated_image = image.copy()
     for (box, (name, score)) in zip(boxes, results):
@@ -276,6 +319,8 @@ def recognize_faces(image, database, threshold=0.7):
         color = (0, 255, 0) if name else (0, 0, 255)
         cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
         cv2.putText(annotated_image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    
+    print("Face recognition completed.")
     return annotated_image, results
 
 def numpy_normalize(embeddings):
@@ -285,7 +330,6 @@ def numpy_normalize(embeddings):
 def recognize_faces_faiss(input_image, database, threshold=0.6, nlist=16, nprobe=4):
     """
     Optimized face recognition using FAISS with approximate nearest neighbor search.
-    Designed for MacBook Air M1 with CPU optimization.
     """
     print("Starting to recognize faces using FAISS.")
 
