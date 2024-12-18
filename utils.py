@@ -2,7 +2,7 @@ import cv2
 import pickle
 import numpy as np
 import torch
-from facenet_pytorch import MTCNN, InceptionResnetV1
+from facenet_pytorch import InceptionResnetV1
 import os
 import faiss
 import mediapipe as mp
@@ -12,7 +12,6 @@ from sklearn.preprocessing import normalize
 
 
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-mtcnn = MTCNN(keep_all=True, device=device)
 facenet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
 
 # Initialize MediaPipe BlazeFace
@@ -160,6 +159,77 @@ def extract_face(image, target_size=(160, 160)):
         cv2.destroyAllWindows()  # If any windows were created during processing
         return boxes, cropped_faces
 
+def remove_person (name):
+    database =  load_database()
+    database.popitem(name)
+    save_database(database)
+
+def save_and_process_cropped_image(name, base64_image, save_dir, database):
+    """
+    Save the image to a folder, process the face, update the in-memory and .pkl database.
+    
+    Parameters:
+    - name: Name of the person (used for folder and labeling).
+    - base64_image: Base64-encoded image string.
+    - save_dir: Base directory to store images.
+    - database: In-memory face database dictionary.
+    """
+    try:
+        # Create user directory
+        user_dir = os.path.join(save_dir, name)
+        os.makedirs(user_dir, exist_ok=True)
+
+        # Generate the next file name
+        file_path = get_next_filename(user_dir, name)
+
+        # Decode and save the base64 image
+        image_data = base64.b64decode(base64_image.split(",")[1])
+        with open(file_path, "wb") as f:
+            f.write(image_data)
+        print(f"Image saved at {file_path}")
+
+        # Read the saved image
+        image = cv2.imread(file_path)
+        if image is None:
+            return {"error": "Invalid image data"}
+
+        # Directly encode the face as the image already contains the cropped face
+        embeddings = encode_faces([image], facenet)
+
+        # Update the database with weighted average
+        if name not in database:
+            print("Name not in database, creating new record.")
+            database[name] = embeddings  # Initialize with the current embedding
+        else:
+            print(f"Name {name} found in database, updating record.")
+            
+            # Calculate the weighted average of embeddings
+            existing_embedding = database[name]
+            
+            # Count the number of existing images in the folder
+            existing_images_count = len([
+                filename for filename in os.listdir(user_dir) 
+                if filename.endswith(".jpg") or filename.endswith(".png") or filename.endswith(".jpeg")
+            ])
+            
+            print(f"Existing image count for {name}: {existing_images_count}")
+            
+            # Weighted average formula
+            new_average_embedding = (
+                (existing_embedding * existing_images_count - 1) + embeddings
+            ) / (existing_images_count)
+
+            database[name] = new_average_embedding  # Update the database with the weighted average
+        # Save the updated database to a .pkl file
+        save_database(database)
+        print("Updated .pkl file with the new entry.")
+
+        return {"message": "Image processed and database updated successfully", "file_path": file_path}
+
+    except Exception as e:
+        print(f"Error during image processing: {e}")
+        return {"error": str(e)}
+
 def encode_faces(faces, facenet):
     embeddings = []
     for face in faces:
@@ -168,7 +238,7 @@ def encode_faces(faces, facenet):
         embeddings.append(embedding)
     return np.vstack(embeddings)
 
-DATABASE_FILE = "face_database.pkl"  # File to store face database
+DATABASE_FILE = "face_database_augmented.pkl"  # File to store face database
 
 def save_database(database, file_path=DATABASE_FILE):
     """ Save the face database to a file. """
@@ -245,7 +315,7 @@ def build_face_database(image_folder):
 def compute_average_embeddings(database):
     return {name: np.mean(np.array(embeddings), axis=0) for name, embeddings in database.items()}
 
-def recognize_faces(image, database, threshold=0.7, confidence_margin=0.0001):
+def recognize_faces(image, database, threshold=0.7, confidence_margin=0.001):
     """
     Detect and recognize faces in an image by comparing embeddings 
     with all known embeddings in the database.

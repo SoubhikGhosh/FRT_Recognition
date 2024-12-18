@@ -7,3 +7,4 @@ torchvision
 facenet-pytorch
 faiss-cpu
 tqdm
+tensorflow
