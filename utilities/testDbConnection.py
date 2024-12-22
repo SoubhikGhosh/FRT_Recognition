@@ -13,6 +13,8 @@ def test_connection():
         conn = psycopg2.connect(**DB_CONFIG)
         print("Connection successful!")
         conn.close()
+        return "Connection successful!"
     except Exception as e:
         print("Connection failed:", e)
+        return "Connection not successful!"
 

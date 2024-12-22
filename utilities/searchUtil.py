@@ -36,8 +36,8 @@ def run_ann_search(query_embedding):
     # Prepare results in a more readable format
     if results:
         person_name, _, distance = results[0]
-        print(f"detected: {person_name} distance: {distance}")
         confidence = 1.0 - float(distance)
+        print(f"detected: {person_name} confidence: {confidence}")
         
         # Check if confidence is below the threshold
         if confidence < CONFIDENCE_THRESHOLD:

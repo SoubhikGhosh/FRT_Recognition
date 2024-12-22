@@ -2,9 +2,10 @@ from flask import Flask, request, jsonify
 from flask_cors import cross_origin
 import cv2
 import base64
-from utilities.dbUtils import add_face_to_db
-from utilities.faceUtils import encode_faces, extract_face
+from utilities.dbUtils import add_face_to_db, build_face_database
+from utilities.faceUtils import encode_faces, extract_face, unsharp_mask
 from utilities.searchUtil import run_ann_search
+from utilities.testDbConnection import test_connection
 import numpy as np
 
 app = Flask(__name__)
@@ -13,6 +14,31 @@ app = Flask(__name__)
 # IMAGE_FOLDER = "known_faces"
 # database = build_face_database(IMAGE_FOLDER)
 
+@app.route('/test-db-connection', methods=['GET'])
+@cross_origin(origins=['*'])
+def test_db_connection():
+    if test_connection() == "Connection successful!":
+        return jsonify(test_connection()), 200
+    else:
+        return jsonify(test_connection()), 500
+    
+@app.route('/load-database', methods=['POST'])
+@cross_origin(origins=['*'])
+def load_data_to_postgres():
+    try:
+        # Parse the JSON request
+        data = request.get_json()
+
+        # Check if the 'folder' are present
+        if 'folder' not in data:
+            return jsonify({"error": "folder name missing"}), 400
+        
+        IMAGE_FOLDER = data['folder']
+        build_face_database(IMAGE_FOLDER)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
 @app.route('/register', methods=['POST'])
 @cross_origin(origins=['*'])
 def add_face():
@@ -43,6 +69,8 @@ def add_face():
         np_arr = np.frombuffer(img_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        image = unsharp_mask(image)
+        print(f'enhanced face: {image}')
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:
@@ -89,6 +117,7 @@ def recognize_face():
         np_arr = np.frombuffer(img_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        image = unsharp_mask(image)
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:

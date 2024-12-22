@@ -53,7 +53,7 @@ def build_face_database(image_folder):
                 pbar.update(1)
                 continue
 
-            boxes, faces = extract_face(image)  # Assume this function exists
+            _, faces = extract_face(image)  # Assume this function exists
             if faces:
                 embeddings = encode_faces(faces, facenet)  # Assume this function exists
                 for embedding in embeddings:
