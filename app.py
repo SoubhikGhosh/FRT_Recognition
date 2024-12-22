@@ -3,16 +3,13 @@ from flask_cors import cross_origin
 import cv2
 import base64
 from utilities.dbUtils import add_face_to_db, build_face_database
-from utilities.faceUtils import encode_faces, extract_face, unsharp_mask
+from utilities.faceUtils import encode_faces, extract_face, preprocess_image
 from utilities.searchUtil import run_ann_search
 from utilities.testDbConnection import test_connection
 import numpy as np
+from bootstrapProperties import PREPROCESS
 
 app = Flask(__name__)
-
-# Load the face database (can be uncommented if needed in the future)
-# IMAGE_FOLDER = "known_faces"
-# database = build_face_database(IMAGE_FOLDER)
 
 @app.route('/test-db-connection', methods=['GET'])
 @cross_origin(origins=['*'])
@@ -69,8 +66,8 @@ def add_face():
         np_arr = np.frombuffer(img_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        image = unsharp_mask(image)
-        print(f'enhanced face: {image}')
+        if (PREPROCESS):
+            image = preprocess_image(image)
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:
@@ -117,7 +114,8 @@ def recognize_face():
         np_arr = np.frombuffer(img_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        image = unsharp_mask(image)
+        if (PREPROCESS):
+            image = preprocess_image(image)
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:
