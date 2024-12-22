@@ -33,6 +33,8 @@ def load_data_to_postgres():
         IMAGE_FOLDER = data['folder']
         build_face_database(IMAGE_FOLDER)
 
+        return jsonify({"message: Loaded data to database."})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     

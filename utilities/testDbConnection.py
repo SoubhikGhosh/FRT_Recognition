@@ -1,9 +1,9 @@
 import psycopg2
 
 DB_CONFIG = {
-    "dbname": "face_db",
+    "dbname": "face_normalised",
     "user": "soubhikghosh",
-    "password": "99ghosh@",  # Provide a password if set
+    "password": "99ghosh@",  
     "host": "localhost",
     "port": 5432
 }

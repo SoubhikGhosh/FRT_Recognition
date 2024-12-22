@@ -59,8 +59,7 @@ def extract_face(image, target_size=(160, 160)):
                 continue
             face_resized = cv2.resize(face, target_size)
             cropped_faces.append(face_resized)
-
-        cv2.destroyAllWindows()  # If any windows were created during processing
+            
         return boxes, cropped_faces
 
 def encode_faces(faces):
@@ -116,52 +115,13 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, gamma=1.0):
     
     return sharpened
 
-def align_face(image):
-    """
-    Align face using MediaPipe face landmarks.
-    """
-    # Convert image to RGB for MediaPipe
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # Process the image to find face landmarks
-    results = face_mesh.process(rgb_image)
-
-    # Check if any face is detected
-    if not results.multi_face_landmarks:
-        raise ValueError("No faces detected")
-
-    # Select the first face
-    face_landmarks = results.multi_face_landmarks[0]
-    
-    # Get the bounding box of the face (simplified method using landmarks)
-    height, width, _ = image.shape
-    x_min, y_min = int(width), int(height)
-    x_max, y_max = 0, 0
-
-    for landmark in face_landmarks.landmark:
-        x = int(landmark.x * width)
-        y = int(landmark.y * height)
-        x_min = min(x_min, x)
-        y_min = min(y_min, y)
-        x_max = max(x_max, x)
-        y_max = max(y_max, y)
-    
-    # Crop the face region using the bounding box
-    face = image[y_min:y_max, x_min:x_max]
-    
-    # Resize the face to the expected input size for InceptionResNetV1
-    return cv2.resize(face, (160, 160))  # Resize to 160x160
-
 def preprocess_image(image):
     """Preprocess the image before passing it to InceptionResNetV1."""
     
-    # Step 1: Align the face using MediaPipe
-    image = align_face(image)
-    
-    # Step 2: Preprocess (sharpening, color normalization, gamma correction)
+    # Step 1: Preprocess (sharpening, color normalization, gamma correction)
     image = unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, gamma=1.0)
 
-    # Step 3: Normalize the image by scaling to [0, 1] and performing mean normalization
+    # Step 2: Normalize the image by scaling to [0, 1] and performing mean normalization
     image = np.asarray(image, dtype=np.float32)
     image = image / 255.0  # Scale to [0, 1]
     
@@ -169,8 +129,10 @@ def preprocess_image(image):
     # For VGGFace2: mean values are [93.5940, 104.7624, 129.1863]
     image = image - np.array([93.5940, 104.7624, 129.1863]) / 255.0  # Subtract mean (based on VGGFace2 training)
 
+    # Step 3: Convert image back to uint8 type (necessary for OpenCV functions)
+    image = (image * 255).astype(np.uint8)  # Convert back to 8-bit integer
 
     # Step 4: Expand dimensions to match the model input (160x160, 3 channels)
     image = np.expand_dims(image, axis=0)
-    
+
     return image

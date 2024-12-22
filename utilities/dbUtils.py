@@ -4,8 +4,9 @@ import os
 import cv2
 import torch
 from facenet_pytorch import InceptionResnetV1
-from utilities.faceUtils import extract_face, encode_faces
+from utilities.faceUtils import extract_face, encode_faces, preprocess_image
 from utilities.testDbConnection import DB_CONFIG
+from bootstrapProperties import PREPROCESS
 
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 facenet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
@@ -52,6 +53,10 @@ def build_face_database(image_folder):
                 print(f"Warning: Unable to read {image_path}")
                 pbar.update(1)
                 continue
+
+
+            if (PREPROCESS):
+                image = preprocess_image(image)
 
             _, faces = extract_face(image)  # Assume this function exists
             if faces:
