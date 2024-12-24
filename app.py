@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import cross_origin
 import cv2
 import base64
-from utilities.dbUtils import add_face_to_db, build_face_database
+from utilities.dbUtils import add_face_to_db, build_face_database, insert_feedback
 from utilities.faceUtils import encode_faces, extract_face, unsharp_mask
 from utilities.searchUtil import run_ann_search
 from utilities.testDbConnection import test_connection
@@ -138,6 +138,39 @@ def recognize_face():
         print(results)
         return jsonify(results)
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/feedback', methods=['POST'])
+@cross_origin(origins=['*'])
+def register_feedback():
+    """
+    Endpoint to receive a feedback 
+    """
+    try:
+        # Parse the JSON request
+        data = request.get_json()
+
+        # Define the required keys
+        required_keys = ['actual_name', 'predicted_name', 'confidence_score', 'embedding']
+
+        # Check if all required keys are present
+        missing_keys = [key for key in required_keys if key not in data]
+        if missing_keys:
+            return jsonify({"error": f"Missing keys: {', '.join(missing_keys)}"}), 400
+        
+        embedding = data[embedding], 
+        actual_name = data[actual_name],
+        predicted_name = data[predicted_name], 
+        confidence_score = data[confidence_score], 
+        feedback_type = data[feedback_type]
+
+        # Insert the feedback in DB
+        register_feedback(embedding, actual_name, predicted_name, confidence_score, feedback_type)
+    
+        return jsonify({"message": "feedback received."}), 200
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

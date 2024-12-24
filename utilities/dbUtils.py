@@ -82,9 +82,34 @@ def add_face_to_db(name, embedding):
         cursor.execute(sql, (name, embedding_str))
         conn.commit()
 
-        cursor.close()
-        conn.close()
-
     except Exception as e:
         print(f"Error storing face data: {e}")
         raise
+
+    finally:
+        cursor.close()
+        conn.close()
+
+def insert_feedback (embedding, actual_name, predicted_name, confidence_score, feedback_type):
+    conn = connect_to_db()
+    cursor = conn.cursor()
+
+    try:
+
+        # Insert feedback record
+        cursor.execute("""
+            INSERT INTO feedback (actual_name, predicted_name, confidence_score, embedding, feedback_type)
+            VALUES (%s, %s, %s, %s, %s, %s);
+        """, (actual_name, predicted_name, confidence_score, embedding, feedback_type))
+        
+        conn.commit()
+        print("Feedback successfully inserted.")
+    
+    except Exception as e:
+        print(f"Error inserting feedback: {e}")
+        raise
+    
+    finally:
+        cursor.close()
+        conn.close()
+
