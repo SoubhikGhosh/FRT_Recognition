@@ -70,7 +70,7 @@ def add_face():
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         image = unsharp_mask(image)
-        print(f'enhanced face: {image}')
+
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:
@@ -153,18 +153,45 @@ def register_feedback():
         data = request.get_json()
 
         # Define the required keys
-        required_keys = ['actual_name', 'predicted_name', 'confidence_score', 'embedding']
+        required_keys = ['actual_name', 'predicted_name', 'confidence_score', 'image']
 
         # Check if all required keys are present
         missing_keys = [key for key in required_keys if key not in data]
         if missing_keys:
             return jsonify({"error": f"Missing keys: {', '.join(missing_keys)}"}), 400
         
-        embedding = data[embedding], 
-        actual_name = data[actual_name],
-        predicted_name = data[predicted_name], 
-        confidence_score = data[confidence_score], 
-        feedback_type = data[feedback_type]
+        img_data = data[image]
+        actual_name = data[actual_name]
+        predicted_name = data[predicted_name]
+        confidence_score = data[confidence_score]
+
+        if 'feedback_type' not in data:
+           feedback_type = "incorrect"
+
+        # If the image string includes data:image prefix, strip it
+        if img_data.startswith("data:image"):
+            img_data = img_data.split(",")[1]
+
+        # Decode the base64 string to bytes
+        img_bytes = base64.b64decode(img_data)
+
+        # Convert the bytes to an OpenCV image
+        np_arr = np.frombuffer(img_bytes, np.uint8)
+        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        image = unsharp_mask(image)
+
+        # Extract faces from the image
+        _, faces = extract_face(image)
+        if not faces:
+            return jsonify({"message": "No face detected"}), 400
+
+        # Encode the detected faces using FaceNet
+        embeddings = encode_faces(faces)
+        embedding = embeddings[0]  # Assuming one face per image
+
+        # Store the face embedding and name in the database
+        add_face_to_db(actual_name, embedding)
 
         # Insert the feedback in DB
         register_feedback(embedding, actual_name, predicted_name, confidence_score, feedback_type)
