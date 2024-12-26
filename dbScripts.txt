@@ -1,15 +1,14 @@
--- Rename the columns
-ALTER TABLE public.feedback
-RENAME COLUMN actual_name TO actual_phone_number;
-
-ALTER TABLE public.feedback
-RENAME COLUMN predicted_name TO predicted_phone_number;
-
--- Change the size of the columns to VARCHAR(10)
-ALTER TABLE public.feedback
-ALTER COLUMN actual_phone_number TYPE VARCHAR(10),
-ALTER COLUMN predicted_phone_number TYPE VARCHAR(10);
-
+CREATE TABLE IF NOT EXISTS public.feedback
+(
+    id integer NOT NULL DEFAULT nextval('feedback_id_seq'::regclass),
+    "timestamp" timestamp without time zone DEFAULT now(),
+    actual_phone_number character varying(10) COLLATE pg_catalog."default" NOT NULL,
+    predicted_phone_number character varying(10) COLLATE pg_catalog."default" NOT NULL,
+    confidence_score double precision NOT NULL,
+    embedding vector(512) NOT NULL,
+    feedback_type character varying(50) COLLATE pg_catalog."default" NOT NULL,
+    CONSTRAINT feedback_pkey PRIMARY KEY (id)
+)
 
 -- Generate a sequence of dummy phone numbers starting from a base number
 DO $$
