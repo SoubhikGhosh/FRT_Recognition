@@ -65,21 +65,53 @@ def build_face_database(image_folder):
 
     print("Database loaded into PostgreSQL.")
 
-def add_face_to_db(name, embedding):
-    """Store a face's name and embedding in the database."""
+def add_face_to_db(phone_number, embedding, name):
+    """
+    Store a face's phone number, name, and embedding in the database.
+    If the name is not passed, retrieve it from the database using the phone number.
+    Ensures phone number and embedding are stored in their respective tables.
+    Handles duplicates for phone numbers gracefully.
+    """
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
 
+        # If name is not provided, query the database to get the name based on phone_number
+        if not name:
+            sql_get_name = """
+            SELECT person_name 
+            FROM person_phone_mapping 
+            WHERE phone_number = %s;
+            """
+            cursor.execute(sql_get_name, (phone_number,))
+            result = cursor.fetchone()
+            if result:
+                name = result[0]  # If a name is found, use it
+            else:
+                print(f"Error: No name found for phone number {phone_number}.")
+                return  # Exit if no name found for the given phone number
+
         # Convert embedding to the pgvector format
         embedding_str = f"[{','.join(map(str, embedding))}]"
 
-        # SQL query to insert the face into the database
-        sql = """
-        INSERT INTO face_embeddings (person_name, embedding)
+        # Try to insert into person_phone_mapping (phone number and name)
+        try:
+            sql_person_phone = """
+            INSERT INTO person_phone_mapping (person_name, phone_number)
+            VALUES (%s, %s);
+            """
+            cursor.execute(sql_person_phone, (name, phone_number))
+        except psycopg2.errors.UniqueViolation:
+            print(f"Phone number {phone_number} already exists in person_phone_mapping.")
+
+        # Insert the embedding and phone number into face_embeddings
+        sql_face_embedding = """
+        INSERT INTO face_embeddings (phone_number, embedding)
         VALUES (%s, %s);
         """
-        cursor.execute(sql, (name, embedding_str))
+        cursor.execute(sql_face_embedding, (phone_number, embedding_str))
+
+        # Commit the transaction
         conn.commit()
 
     except Exception as e:
@@ -90,7 +122,7 @@ def add_face_to_db(name, embedding):
         cursor.close()
         conn.close()
 
-def insert_feedback (embedding, actual_name, predicted_name, confidence_score, feedback_type):
+def insert_feedback (embedding, actual_phone_number, predicted_phone_number, confidence_score, feedback_type):
     conn = connect_to_db()
     cursor = conn.cursor()
 
@@ -98,9 +130,9 @@ def insert_feedback (embedding, actual_name, predicted_name, confidence_score, f
 
         # Insert feedback record
         cursor.execute("""
-            INSERT INTO feedback (actual_name, predicted_name, confidence_score, embedding, feedback_type)
+            INSERT INTO feedback (actual_phone_number, predicted_phone_number, confidence_score, embedding, feedback_type)
             VALUES (%s, %s, %s, %s, %s, %s);
-        """, (actual_name, predicted_name, confidence_score, embedding, feedback_type))
+        """, (actual_phone_number, predicted_phone_number, confidence_score, embedding, feedback_type))
         
         conn.commit()
         print("Feedback successfully inserted.")

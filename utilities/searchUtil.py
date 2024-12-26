@@ -19,9 +19,12 @@ def run_ann_search(query_embedding):
 
     # SQL query to find the top 1 most similar embedding
     sql = """
-    SELECT person_name, embedding, 
-           (embedding <=> %s) AS distance  
-    FROM face_embeddings
+    SELECT fe.person_name, fe.embedding, 
+           (fe.embedding <=> %s) AS distance,
+           ppm.phone_number
+    FROM face_embeddings fe
+    JOIN person_phone_mapping ppm
+    ON fe.phone_number = ppm.phone_number
     ORDER BY distance  
     LIMIT 1;
     """
@@ -35,14 +38,14 @@ def run_ann_search(query_embedding):
 
     # Prepare results in a more readable format
     if results:
-        person_name, _, distance = results[0]
+        person_name, _, distance, phone_number = results[0]
         confidence = 1.0 - float(distance)
-        print(f"detected: {person_name} confidence: {confidence}")
+        print(f"Detected: {person_name}, Confidence: {confidence}, Phone Number: {phone_number}")
         
         # Check if confidence is below the threshold
         if confidence < CONFIDENCE_THRESHOLD:
             return {"message": "Face detected but not recognized"}
         
-        return {"name": person_name, "confidence": confidence}
+        return {"name": person_name, "confidence": confidence, "phone_number": phone_number}
     else:
         return {"message": "No matching faces found"}

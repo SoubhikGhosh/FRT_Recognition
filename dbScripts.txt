@@ -1,0 +1,76 @@
+-- Rename the columns
+ALTER TABLE public.feedback
+RENAME COLUMN actual_name TO actual_phone_number;
+
+ALTER TABLE public.feedback
+RENAME COLUMN predicted_name TO predicted_phone_number;
+
+-- Change the size of the columns to VARCHAR(10)
+ALTER TABLE public.feedback
+ALTER COLUMN actual_phone_number TYPE VARCHAR(10),
+ALTER COLUMN predicted_phone_number TYPE VARCHAR(10);
+
+
+-- Generate a sequence of dummy phone numbers starting from a base number
+DO $$
+DECLARE
+    base_phone_number BIGINT := 7000000000; -- Starting point for dummy phone numbers
+    current_phone_number BIGINT;
+    person_name_record RECORD;
+BEGIN
+    -- Create a temporary table to assign unique phone numbers to each person_name
+    CREATE TEMP TABLE temp_person_phone_map AS
+    SELECT DISTINCT person_name, NULL::VARCHAR(10) AS phone_number
+    FROM public.face_embeddings;
+
+    -- Assign a unique phone number to each person_name
+    current_phone_number := base_phone_number;
+    FOR person_name_record IN
+        SELECT * FROM temp_person_phone_map
+    LOOP
+        UPDATE temp_person_phone_map
+        SET phone_number = current_phone_number::VARCHAR(10)
+        WHERE person_name = person_name_record.person_name;
+
+        current_phone_number := current_phone_number + 1;
+    END LOOP;
+
+    -- Update the face_embeddings table with the phone numbers
+    UPDATE public.face_embeddings
+    SET phone_number = (
+        SELECT phone_number
+        FROM temp_person_phone_map
+        WHERE temp_person_phone_map.person_name = face_embeddings.person_name
+    );
+
+    -- Drop the temporary table
+    DROP TABLE temp_person_phone_map;
+END $$;
+
+
+-- Create a new table to store unique person_name and phone_number mappings
+CREATE TABLE public.person_phone_mapping
+(
+    person_name text COLLATE pg_catalog."default" NOT NULL,
+    phone_number character varying(10) COLLATE pg_catalog."default" NOT NULL,
+    CONSTRAINT person_phone_mapping_pkey PRIMARY KEY (phone_number)
+);
+
+-- Insert unique person_name and phone_number mappings from the face_embeddings table
+INSERT INTO public.person_phone_mapping (person_name, phone_number)
+SELECT DISTINCT person_name, phone_number
+FROM public.face_embeddings
+WHERE phone_number IS NOT NULL;
+
+
+-- Step 1: Remove the person_name column from face_embeddings
+ALTER TABLE public.face_embeddings
+DROP COLUMN person_name;
+
+-- Step 2: Add a foreign key constraint to ensure phone_number in face_embeddings references person_phone_mapping
+ALTER TABLE public.face_embeddings
+ADD CONSTRAINT fk_phone_number
+FOREIGN KEY (phone_number) REFERENCES public.person_phone_mapping (phone_number)
+ON DELETE CASCADE;
+
+

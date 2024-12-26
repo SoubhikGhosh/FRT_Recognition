@@ -43,51 +43,65 @@ def load_data_to_postgres():
 @cross_origin(origins=['*'])
 def add_face():
     """
-    Endpoint to add a face to the database. 
-    Accepts JSON with the key "name" and "image" (base64).
+    Endpoint to add a face to the database.
+    Accepts JSON with the key "name", "image" (base64), and "phone_number".
     Converts the face to an embedding and stores it in the database.
     """
     try:
         # Parse the JSON request
         data = request.get_json()
 
-        # Check if the 'name' and 'image' keys are present
-        if 'name' not in data or 'image' not in data:
-            return jsonify({"error": "Name or image data missing"}), 400
-        
+        # Define the required keys
+        required_keys = ['name', 'image', 'phone_number']
+
+        # Check if all required keys are present
+        missing_keys = [key for key in required_keys if key not in data]
+        if missing_keys:
+            return jsonify({"error": f"Missing keys: {', '.join(missing_keys)}"}), 400
+
         name = data['name']
         img_data = data['image']
-        
-        # If the image string includes data:image prefix, strip it
+        phone_number = data['phone_number']
+
+        # If the image string includes a data:image prefix, strip it
         if img_data.startswith("data:image"):
             img_data = img_data.split(",")[1]
 
         # Decode the base64 string to bytes
-        img_bytes = base64.b64decode(img_data)
+        try:
+            img_bytes = base64.b64decode(img_data)
+        except Exception as e:
+            return jsonify({"error": "Invalid image data, unable to decode base64."}), 400
 
         # Convert the bytes to an OpenCV image
         np_arr = np.frombuffer(img_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        if image is None:
+            return jsonify({"error": "Failed to decode image. Ensure the image is valid."}), 400
 
         image = unsharp_mask(image)
 
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:
-            return jsonify({"message": "No face detected"}), 400
+            return jsonify({"message": "No face detected."}), 400
 
         # Encode the detected faces using FaceNet
         embeddings = encode_faces(faces)
         embedding = embeddings[0]  # Assuming one face per image
 
         # Store the face embedding and name in the database
-        add_face_to_db(name, embedding)
+        try:
+            add_face_to_db(phone_number, embedding, name)
+        except Exception as e:
+            return jsonify({"error": f"Error storing face data: {str(e)}"}), 500
+
         print("Face added successfully")
         return jsonify({"message": "Face added successfully to the database"}), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 @app.route('/recognize', methods=['POST'])
 @cross_origin(origins=['*'])
@@ -135,71 +149,93 @@ def recognize_face():
             return jsonify({"message": "Face detected but not recognized"}), 400
         if "message" in results and results["message"] == "No matching faces found":
             return jsonify({"message": "No matching faces found"}), 400
-        print(results)
+
         return jsonify(results)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/feedback', methods=['POST'])
 @cross_origin(origins=['*'])
-def register_feedback():
+def register_feedback_endpoint():
     """
-    Endpoint to receive a feedback 
+    Endpoint to receive feedback on face recognition results.
     """
     try:
         # Parse the JSON request
         data = request.get_json()
 
         # Define the required keys
-        required_keys = ['actual_name', 'predicted_name', 'confidence_score', 'image']
+        required_keys = ['predicted_phone_number', 'confidence_score', 'image', 'feedback_type']
 
         # Check if all required keys are present
         missing_keys = [key for key in required_keys if key not in data]
         if missing_keys:
             return jsonify({"error": f"Missing keys: {', '.join(missing_keys)}"}), 400
         
-        img_data = data[image]
-        actual_name = data[actual_name]
-        predicted_name = data[predicted_name]
-        confidence_score = data[confidence_score]
+        # Extract values from the request
+        img_data = data.get('image')
+        predicted_phone_number = data.get('predicted_phone_number')
+        confidence_score = data.get('confidence_score')
+        feedback_type = data.get('feedback_type')
 
-        if 'feedback_type' not in data:
-           feedback_type = "incorrect"
+        if feedback_type.lower() == "correct" and 'actual_phone_number' not in data:
+            actual_phone_number = data.get('predicted_phone_number')
+        else:
+            actual_phone_number = data.get('actual_phone_number')
 
-        # If the image string includes data:image prefix, strip it
+        # Check if image data is provided
+        if not img_data:
+            return jsonify({"error": "Image data is required"}), 400
+
+        # If the image string includes 'data:image' prefix, strip it
         if img_data.startswith("data:image"):
             img_data = img_data.split(",")[1]
 
         # Decode the base64 string to bytes
-        img_bytes = base64.b64decode(img_data)
+        try:
+            img_bytes = base64.b64decode(img_data)
+        except Exception as e:
+            return jsonify({"error": "Invalid image format. Could not decode the image."}), 400
 
         # Convert the bytes to an OpenCV image
         np_arr = np.frombuffer(img_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        # If the image is invalid (empty or cannot be processed), return an error
+        if image is None:
+            return jsonify({"error": "Failed to decode the image. Invalid image."}), 400
+
+        # Apply unsharp mask to enhance the image (if required)
         image = unsharp_mask(image)
 
         # Extract faces from the image
         _, faces = extract_face(image)
         if not faces:
-            return jsonify({"message": "No face detected"}), 400
+            return jsonify({"error": "No face detected in the image"}), 400
 
         # Encode the detected faces using FaceNet
         embeddings = encode_faces(faces)
         embedding = embeddings[0]  # Assuming one face per image
 
-        # Store the face embedding and name in the database
-        add_face_to_db(actual_name, embedding)
+        # If feedback type is "correct", add the face to the database
+        if feedback_type.lower() == "correct":
+            try:
+                add_face_to_db(actual_phone_number, embedding, None)
+            except Exception as e:
+                return jsonify({"error": f"Error storing face data: {str(e)}"}), 500
 
-        # Insert the feedback in DB
-        register_feedback(embedding, actual_name, predicted_name, confidence_score, feedback_type)
-    
-        return jsonify({"message": "feedback received."}), 200
-        
+        # Insert the feedback in the database
+        try:
+            insert_feedback(embedding, actual_phone_number, predicted_phone_number, confidence_score, feedback_type)
+        except Exception as e:
+            return jsonify({"error": f"Error inserting feedback: {str(e)}"}), 500
+
+        return jsonify({"message": "Feedback received successfully."}), 200
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Catch all other exceptions and return a 500 error
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(port=5001, debug=False)
