@@ -19,7 +19,7 @@ def run_ann_search(query_embedding):
 
     # SQL query to find the top 1 most similar embedding
     sql = """
-    SELECT fe.person_name, fe.embedding, 
+    SELECT ppm.person_name, fe.embedding, 
            (fe.embedding <=> %s) AS distance,
            ppm.phone_number
     FROM face_embeddings fe
