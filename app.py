@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import cross_origin
 import cv2
 import base64
-from utilities.dbUtils import add_face_to_db, build_face_database, insert_feedback
+from utilities.dbUtils import add_face_to_db, build_face_database, insert_feedback, update_phone_number_in_db
 from utilities.faceUtils import encode_faces, extract_face, unsharp_mask
 from utilities.searchUtil import run_ann_search
 from utilities.testDbConnection import test_connection
@@ -62,6 +62,14 @@ def add_face():
         name = data['name']
         img_data = data['image']
         phone_number = data['phone_number']
+
+        # Validate phone number length and format
+        if not phone_number.isdigit() or len(phone_number) != 10:
+            return jsonify({"error": "Phone number must be exactly 10 digits"}), 400
+
+        # Format the phone number to xxx-xxx-xxxx
+        formatted_phone_number = f"{phone_number[:3]}-{phone_number[3:6]}-{phone_number[6:]}"
+        phone_number = formatted_phone_number  # Update the variable with the formatted value
 
         # If the image string includes a data:image prefix, strip it
         if img_data.startswith("data:image"):
@@ -184,6 +192,14 @@ def register_feedback_endpoint():
         else:
             actual_phone_number = data.get('actual_phone_number')
 
+            # Validate phone number length and format
+            if not actual_phone_number.isdigit() or len(actual_phone_number) != 10:
+                return jsonify({"error": "Phone number must be exactly 10 digits"}), 400
+
+            # Format the phone number to xxx-xxx-xxxx
+            formatted_phone_number = f"{actual_phone_number[:3]}-{actual_phone_number[3:6]}-{actual_phone_number[6:]}"
+            actual_phone_number = formatted_phone_number  # Update the variable with the formatted value
+
         # Check if image data is provided
         if not img_data:
             return jsonify({"error": "Image data is required"}), 400
@@ -236,6 +252,49 @@ def register_feedback_endpoint():
     except Exception as e:
         # Catch all other exceptions and return a 500 error
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+@app.route('/update-phone-number', methods=['POST'])
+@cross_origin(origins=['*'])
+def update_phone_number():
+    """
+    API endpoint to update a phone number in the database.
+    Accepts JSON input with 'name' and 'new_phone_number'.
+    """
+    try:
+        # Parse the JSON request
+        data = request.get_json()
+
+        # Validate input
+        if not data or 'name' not in data or 'new_phone_number' not in data:
+            return jsonify({"error": "Both 'name' and 'new_phone_number' are required"}), 400
+
+        name = data['name']
+        new_phone_number = data['new_phone_number']
+
+        # Validate the new phone number
+        if len(new_phone_number) != 10:
+            return jsonify({"error": "Phone number must be exactly 10 digits"}), 400
+
+        # Format the phone number to xxx-xxx-xxxx
+        formatted_phone_number = f"{new_phone_number[:3]}-{new_phone_number[3:6]}-{new_phone_number[6:]}"
+        new_phone_number = formatted_phone_number  # Update variable with formatted value
+
+        # Call the utility function to update the phone number in the database
+        result = update_phone_number_in_db(name, new_phone_number)
+
+        # Handle responses based on utility results
+        if result == "NAME_NOT_FOUND":
+            return jsonify({"error": f"No record found for the name '{name}'"}), 404
+        elif result == "PHONE_NUMBER_EXISTS":
+            return jsonify({"error": f"The phone number '{new_phone_number}' is already assigned to another person"}), 409
+        elif result == "SUCCESS":
+            return jsonify({"message": "Phone number updated successfully"}), 200
+        else:
+            return jsonify({"error": "Unknown error occurred"}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
     app.run(port=5001, debug=False)

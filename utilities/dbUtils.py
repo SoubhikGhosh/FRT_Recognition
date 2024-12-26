@@ -145,3 +145,59 @@ def insert_feedback (embedding, actual_phone_number, predicted_phone_number, con
         cursor.close()
         conn.close()
 
+def update_phone_number_in_db(name, new_phone_number):
+    """
+    Utility function to update a phone number in both tables.
+    Updates all instances of the person's name in `face_embeddings` and `person_phone_mapping` tables.
+    """
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+
+        # Validate if the name exists in person_phone_mapping
+        cursor.execute("SELECT phone_number FROM person_phone_mapping WHERE person_name = %s;", (name,))
+        result = cursor.fetchone()
+        if not result:
+            return "NAME_NOT_FOUND"
+
+        old_phone_number = result[0]
+
+        # Check if the new phone number already exists in person_phone_mapping
+        cursor.execute("SELECT phone_number FROM person_phone_mapping WHERE phone_number = %s;", (new_phone_number,))
+        if cursor.fetchone():
+            return "PHONE_NUMBER_EXISTS"
+
+        # Add the new phone number to person_phone_mapping (to handle foreign key constraint)
+        cursor.execute(
+            """
+            INSERT INTO person_phone_mapping (person_name, phone_number)
+            VALUES (%s, %s)
+            ON CONFLICT DO NOTHING;
+            """,
+            (name, new_phone_number),
+        )
+
+        # Update all instances of the old phone number in the face_embeddings table
+        cursor.execute(
+            "UPDATE face_embeddings SET phone_number = %s WHERE phone_number = %s;",
+            (new_phone_number, old_phone_number),
+        )
+
+        # Remove the old phone number from person_phone_mapping
+        cursor.execute(
+            "DELETE FROM person_phone_mapping WHERE phone_number = %s;",
+            (old_phone_number,),
+        )
+
+        # Commit the transaction
+        conn.commit()
+        return "SUCCESS"
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating phone number: {e}")
+        return {"error": f"Error updating phone number: {str(e)}"}
+
+    finally:
+        cursor.close()
+        conn.close()
