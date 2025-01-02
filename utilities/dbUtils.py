@@ -65,6 +65,28 @@ def build_face_database(image_folder):
 
     print("Database loaded into PostgreSQL.")
 
+def check_if_registered(phone_number):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        sql_get_name = """
+                SELECT person_name 
+                FROM person_phone_mapping 
+                WHERE phone_number = %s;
+                """
+        cursor.execute(sql_get_name, (phone_number,))
+        result = cursor.fetchone()
+        if result:
+            name = result[0]  # If a name is found, use it
+            return name
+        else:
+            print(f"Error: No name found for phone number {phone_number}.")
+            return None
+        
+    except Exception as e:
+        print(f"Error while checking if user is registered: {e}")
+        return None
+
 def add_face_to_db(phone_number, embedding, name):
     """
     Store a face's phone number, name, and embedding in the database.

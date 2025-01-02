@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import cross_origin
 import cv2
 import base64
-from utilities.dbUtils import add_face_to_db, build_face_database, insert_feedback, update_phone_number_in_db
+from utilities.dbUtils import add_face_to_db, build_face_database, insert_feedback, update_phone_number_in_db, check_if_registered
 from utilities.faceUtils import encode_faces, extract_face, unsharp_mask
 from utilities.searchUtil import run_ann_search
 from utilities.testDbConnection import test_connection
@@ -192,8 +192,15 @@ def register_feedback_endpoint():
         else:
             actual_phone_number = data.get('actual_phone_number')
 
+            name =  check_if_registered(actual_phone_number)
+
+            if not name:
+                return jsonify({"error": "Please register your phone number before giving feedback."}), 400
+
+
+
             # Validate phone number length and format
-            if not actual_phone_number.isdigit() or len(actual_phone_number) != 10:
+            if not len(actual_phone_number) != 10:
                 return jsonify({"error": "Phone number must be exactly 10 digits"}), 400
 
             # Format the phone number to xxx-xxx-xxxx
