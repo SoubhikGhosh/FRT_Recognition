@@ -148,6 +148,10 @@ def insert_feedback (embedding, actual_phone_number, predicted_phone_number, con
     conn = connect_to_db()
     cursor = conn.cursor()
 
+    if confidence_score=="" and predicted_phone_number=="":
+        confidence_score=0
+        predicted_phone_number="Unpredicted"
+
     try:
 
         # Insert feedback record

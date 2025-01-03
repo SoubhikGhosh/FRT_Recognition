@@ -192,20 +192,18 @@ def register_feedback_endpoint():
         else:
             actual_phone_number = data.get('actual_phone_number')
 
-            name =  check_if_registered(actual_phone_number)
+        name =  check_if_registered(actual_phone_number)
 
-            if not name:
-                return jsonify({"error": "Please register your phone number before giving feedback."}), 400
+        if not name:
+            return jsonify({"error": "Please register your phone number before giving feedback."}), 408
 
+        # Validate phone number length and format
+        if not len(actual_phone_number) != 10:
+            return jsonify({"error": "Phone number must be exactly 10 digits"}), 400
 
-
-            # Validate phone number length and format
-            if not len(actual_phone_number) != 10:
-                return jsonify({"error": "Phone number must be exactly 10 digits"}), 400
-
-            # Format the phone number to xxx-xxx-xxxx
-            formatted_phone_number = f"{actual_phone_number[:3]}-{actual_phone_number[3:6]}-{actual_phone_number[6:]}"
-            actual_phone_number = formatted_phone_number  # Update the variable with the formatted value
+        # Format the phone number to xxx-xxx-xxxx
+        formatted_phone_number = f"{actual_phone_number[:3]}-{actual_phone_number[3:6]}-{actual_phone_number[6:]}"
+        actual_phone_number = formatted_phone_number  # Update the variable with the formatted value
 
         # Check if image data is provided
         if not img_data:
